@@ -9,6 +9,7 @@ function App() {
   const [policies, setPolicies] = useState([]);
   const [vendorId, setVendorId] = useState(null);
   const [libReady, setLibReady] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // --- IDENTITY ROUTING (The Magic Link Radar) ---
   useEffect(() => {
@@ -104,25 +105,47 @@ function App() {
     if (data) setPolicies(data);
   };
 
-  const handleFileUpload = async (e) => {
+  // --- DRAG AND DROP PHYSICS ---
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      executeUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      executeUpload(e.target.files[0]);
+    }
+  };
+
+  const executeUpload = async (file) => {
     if (!supabaseClient) return;
     try {
       setUploading(true);
-      const file = e.target.files[0];
-      if (!file) return;
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`;
 
       const { error: uploadError } = await supabaseClient.storage
         .from('cois')
-        .upload(filePath, file);
+        .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
       const payload = {
-        document_url: filePath,
+        document_url: fileName,
         processing_status: 'processing',
       };
       
@@ -146,6 +169,30 @@ function App() {
 
   if (!libReady) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p>Loading Engine...</p></div>;
 
+  if (!isConfigured) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full border border-gray-200">
+          <h1 className="text-2xl font-bold mb-2 text-gray-900">Liability Shield Setup</h1>
+          <p className="text-gray-500 mb-6 text-sm">Connect your vault securely.</p>
+          <form onSubmit={handleConfigSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Project URL</label>
+              <input name="url" required className="w-full border border-gray-300 rounded-md p-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Anon Key</label>
+              <input name="key" type="password" required className="w-full border border-gray-300 rounded-md p-2 text-sm" />
+            </div>
+            <button type="submit" className="w-full bg-blue-600 text-white font-semibold py-2 rounded-md hover:bg-blue-700">
+              Connect
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-8">
       <div className="max-w-4xl mx-auto">
@@ -156,6 +203,7 @@ function App() {
             </h1>
             <p className="mt-2 text-gray-500">Zero Trust Compliance Engine</p>
           </div>
+          <button onClick={() => { sessionStorage.clear(); setIsConfigured(false); }} className="text-xs text-gray-400 hover:text-red-600">Disconnect</button>
         </header>
 
         {vendorId && (
@@ -170,8 +218,16 @@ function App() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 mb-12">
           <h2 className="text-xl font-semibold mb-4">Upload Certificate</h2>
           <div className="flex items-center justify-center w-full">
-            <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-all">
-              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+            <label 
+              htmlFor="dropzone-file" 
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+              }`}
+            >
+              <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
                 {uploading ? (
                   <div className="animate-pulse text-blue-600 font-medium">Uploading to Secure Vault...</div>
                 ) : status === 'success' ? (
@@ -180,12 +236,12 @@ function App() {
                   </div>
                 ) : (
                   <>
-                    <svg className="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                    <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+                    <svg className={`w-10 h-10 mb-3 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p className={`mb-2 text-sm ${isDragging ? 'text-blue-600' : 'text-gray-500'}`}><span className="font-semibold">Click to upload</span> or drag and drop</p>
                   </>
                 )}
               </div>
-              <input type="file" className="hidden" accept=".pdf,image/*" onChange={handleFileUpload} disabled={uploading} />
+              <input id="dropzone-file" type="file" className="hidden" accept=".pdf,image/*" onChange={handleFileSelect} disabled={uploading} />
             </label>
           </div>
         </div>
