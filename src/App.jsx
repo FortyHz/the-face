@@ -134,6 +134,7 @@ function App() {
     if (!supabaseClient) return;
     try {
       setUploading(true);
+      setStatus("idle"); // Reset status on new upload
 
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
@@ -161,7 +162,8 @@ function App() {
       fetchPolicies();
     } catch (error) {
       setStatus("error");
-      console.error(error);
+      console.error("TELEMETRY LOG:", error);
+      alert(`SYSTEM BLOCKED UPLOAD: ${error.message || "Check Supabase RLS Policies"}`);
     } finally {
       setUploading(false);
     }
@@ -200,7 +202,7 @@ function App() {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`flex flex-col items-center justify-center w-full h-64 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
-                isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+                isDragging ? 'border-blue-500 bg-blue-50' : status === 'error' ? 'border-red-300 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
               }`}
             >
               <div className="flex flex-col items-center justify-center pt-5 pb-6 pointer-events-none">
@@ -209,6 +211,11 @@ function App() {
                 ) : status === 'success' ? (
                   <div className="text-center">
                     <div className="text-green-600 font-bold text-lg mb-1">Upload Successful</div>
+                  </div>
+                ) : status === 'error' ? (
+                  <div className="text-center">
+                    <div className="text-red-600 font-bold text-lg mb-1">Upload Blocked</div>
+                    <p className="text-xs text-red-500">Vault rejected the file. Check Supabase Policies.</p>
                   </div>
                 ) : (
                   <>
