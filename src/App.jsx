@@ -37,13 +37,9 @@ function App() {
   useEffect(() => {
     if (!libReady) return;
 
-    // Try to auto-initialize if Vite env variables are somehow present in a real build
-    // Falling back to sessionStorage for the Canvas sandbox
-    const envUrl = typeof importScripts === 'undefined' && typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : null;
-    const envKey = typeof importScripts === 'undefined' && typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : null;
-
-    const storedUrl = envUrl || sessionStorage.getItem('sb_url');
-    const storedKey = envKey || sessionStorage.getItem('sb_key');
+    // Fallback to sessionStorage for the Canvas sandbox to avoid compiler crashes
+    const storedUrl = sessionStorage.getItem('sb_url');
+    const storedKey = sessionStorage.getItem('sb_key');
     
     if (storedUrl && storedKey) {
       initializeSupabase(storedUrl, storedKey);
