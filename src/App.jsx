@@ -169,30 +169,6 @@ function App() {
 
   if (!libReady) return <div className="min-h-screen bg-gray-50 flex items-center justify-center"><p>Loading Engine...</p></div>;
 
-  if (!isConfigured) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full border border-gray-200">
-          <h1 className="text-2xl font-bold mb-2 text-gray-900">Liability Shield Setup</h1>
-          <p className="text-gray-500 mb-6 text-sm">Connect your vault securely.</p>
-          <form onSubmit={handleConfigSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Project URL</label>
-              <input name="url" required className="w-full border border-gray-300 rounded-md p-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Anon Key</label>
-              <input name="key" type="password" required className="w-full border border-gray-300 rounded-md p-2 text-sm" />
-            </div>
-            <button type="submit" className="w-full bg-blue-600 text-white font-semibold py-2 rounded-md hover:bg-blue-700">
-              Connect
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-sans p-8">
       <div className="max-w-4xl mx-auto">
@@ -203,6 +179,7 @@ function App() {
             </h1>
             <p className="mt-2 text-gray-500">Zero Trust Compliance Engine</p>
           </div>
+          <button onClick={() => { sessionStorage.clear(); setIsConfigured(false); }} className="text-xs text-gray-400 hover:text-red-600">Disconnect</button>
         </header>
 
         {vendorId && (
