@@ -203,7 +203,6 @@ function App() {
             </h1>
             <p className="mt-2 text-gray-500">Zero Trust Compliance Engine</p>
           </div>
-          <button onClick={() => { sessionStorage.clear(); setIsConfigured(false); }} className="text-xs text-gray-400 hover:text-red-600">Disconnect</button>
         </header>
 
         {vendorId && (
