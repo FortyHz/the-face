@@ -1,22 +1,17 @@
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 
-// --- COMPILER BYPASS FOR ENVIRONMENT VARIABLES ---
-// This hides the import.meta call from strict static analyzers while letting Vite run perfectly.
-const getEnv = (key) => {
-  try {
-    const envReader = new Function('key', 'return typeof import.meta !== "undefined" && import.meta.env ? import.meta.env[key] : undefined;');
-    return envReader(key);
-  } catch (e) {
-    return undefined;
-  }
-};
+// --- PRODUCTION IGNITION ---
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("CRITICAL: Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in environment variables.");
+}
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 function App() {
-  const [config, setConfig] = useState({ url: '', key: '', adminEmail: '' });
-  const [isConfigured, setIsConfigured] = useState(false);
-  const [supabaseClient, setSupabaseClient] = useState(null);
-  const [libReady, setLibReady] = useState(false);
-
   const [uploading, setUploading] = useState(false);
   const [status, setStatus] = useState("idle"); 
   const [policies, setPolicies] = useState([]);
@@ -32,65 +27,13 @@ function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
-  // --- LIBRARY INJECTION ---
-  useEffect(() => {
-    if (window.supabase) {
-      setLibReady(true);
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-    script.async = true;
-    script.onload = () => setLibReady(true);
-    document.body.appendChild(script);
-  }, []);
-
-  // --- INITIALIZATION ---
-  useEffect(() => {
-    if (!libReady) return;
-    
-    const storedUrl = getEnv('VITE_SUPABASE_URL') || sessionStorage.getItem('sb_url');
-    const storedKey = getEnv('VITE_SUPABASE_ANON_KEY') || sessionStorage.getItem('sb_key');
-    const storedAdmin = getEnv('VITE_ADMIN_EMAIL') || sessionStorage.getItem('sb_admin_email') || '';
-    
-    if (storedUrl && storedKey) {
-      initializeSupabase(storedUrl, storedKey, storedAdmin);
-    }
-  }, [libReady]);
-
-  const initializeSupabase = (url, key, adminEmail) => {
-    try {
-      if (!window.supabase) throw new Error("Supabase library not ready");
-      const client = window.supabase.createClient(url, key);
-      setSupabaseClient(client);
-      setConfig({ url, key, adminEmail });
-      setIsConfigured(true);
-      
-      if (!getEnv('VITE_SUPABASE_URL')) {
-        sessionStorage.setItem('sb_url', url);
-        sessionStorage.setItem('sb_key', key);
-        sessionStorage.setItem('sb_admin_email', adminEmail);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleConfigSubmit = (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    initializeSupabase(formData.get('url'), formData.get('key'), formData.get('adminEmail'));
-  };
-
   // --- IDENTITY INTEGRATION ---
   useEffect(() => {
-    if (!supabaseClient || !isConfigured) return;
-
-    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) verifyIdentity(session.user.email);
     });
 
-    const { data: { subscription } } = supabaseClient.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         verifyIdentity(session.user.email);
       } else {
@@ -102,12 +45,11 @@ function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, [supabaseClient, isConfigured]);
+  }, []);
 
   const verifyIdentity = async (email) => {
-    if (!supabaseClient) return;
     try {
-      const ARCHITECT_EMAIL = getEnv('VITE_ADMIN_EMAIL') || config.adminEmail; 
+      const ARCHITECT_EMAIL = import.meta.env.VITE_ADMIN_EMAIL; 
       
       if (ARCHITECT_EMAIL && email.toLowerCase() === ARCHITECT_EMAIL.toLowerCase()) {
         setIsAdmin(true);
@@ -116,7 +58,7 @@ function App() {
         return; 
       }
 
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabase
         .from('vendors')
         .select('id')
         .eq('contact_email', email.trim())
@@ -124,7 +66,7 @@ function App() {
 
       if (error || !data) {
         setLoginError(`Access Denied: Unregistered Entity (${email}).`);
-        await supabaseClient.auth.signOut();
+        await supabase.auth.signOut();
         setVendorId(null);
       } else {
         setVendorId(data.id);
@@ -137,11 +79,9 @@ function App() {
 
   // --- DATA FETCHING ---
   useEffect(() => {
-    if (!supabaseClient || !isConfigured) return;
-
     if (vendorId && !isAdmin) fetchPolicies();
 
-    const channel = supabaseClient
+    const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'policies' }, () => {
         if (vendorId) fetchPolicies();
@@ -149,12 +89,11 @@ function App() {
       })
       .subscribe();
 
-    return () => supabaseClient.removeChannel(channel);
-  }, [vendorId, isAdmin, supabaseClient, isConfigured]);
+    return () => supabase.removeChannel(channel);
+  }, [vendorId, isAdmin]);
 
   const fetchPolicies = async () => {
-    if (!supabaseClient) return;
-    const { data } = await supabaseClient
+    const { data } = await supabase
       .from('policies')
       .select('*')
       .eq('vendor_id', vendorId)
@@ -163,8 +102,7 @@ function App() {
   };
 
   const fetchGlobalPolicies = async () => {
-    if (!supabaseClient) return;
-    const { data } = await supabaseClient
+    const { data } = await supabase
       .from('policies')
       .select('*, vendors(company_name)')
       .order('created_at', { ascending: false });
@@ -185,11 +123,10 @@ function App() {
   };
 
   const handleGoogleLogin = async () => {
-    if (!supabaseClient) return;
     setLoginLoading(true);
     setLoginError('');
     try {
-      const { error } = await supabaseClient.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: window.location.origin }
       });
@@ -201,7 +138,7 @@ function App() {
   };
 
   const handleLogout = async () => {
-    if (supabaseClient) await supabaseClient.auth.signOut(); 
+    await supabase.auth.signOut(); 
   };
 
   // --- UPLOAD PHYSICS ---
@@ -216,19 +153,18 @@ function App() {
   };
 
   const executeUpload = async (file) => {
-    if (!supabaseClient) return;
     try {
       setUploading(true); setStatus("idle");
       const fileExt = file.name.split('.').pop();
       const fileName = `${Math.random()}.${fileExt}`;
 
-      const { error: uploadError } = await supabaseClient.storage.from('cois').upload(fileName, file);
+      const { error: uploadError } = await supabase.storage.from('cois').upload(fileName, file);
       if (uploadError) throw new Error(uploadError.message);
 
       const payload = { document_url: fileName, processing_status: 'processing' };
       if (vendorId) payload.vendor_id = vendorId;
 
-      const { error: dbError } = await supabaseClient.from('policies').insert([payload]);
+      const { error: dbError } = await supabase.from('policies').insert([payload]);
       if (dbError) throw new Error(dbError.message);
 
       setStatus("success");
@@ -263,44 +199,6 @@ function App() {
     }
   };
 
-  // --- RENDER: SETUP / LOADING ---
-  if (!libReady) return <div className="min-h-screen bg-zinc-950 text-blue-500 flex items-center justify-center font-mono text-sm tracking-widest uppercase animate-pulse">Initializing Engine...</div>;
-
-  if (!isConfigured) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-        <GlowingBackground />
-        <div className="relative z-10 bg-zinc-900/50 backdrop-blur-xl p-8 rounded-2xl shadow-2xl w-full max-w-md border border-white/5">
-          <div className="flex items-center justify-center mb-6">
-            <div className="w-12 h-12 bg-blue-600/20 rounded-xl border border-blue-500/30 flex items-center justify-center shadow-[0_0_15px_rgba(37,99,235,0.2)]">
-              <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold mb-2 text-white text-center tracking-tight">System Initialization</h1>
-          <p className="text-sm text-zinc-400 text-center mb-6">Awaiting vault credentials to establish secure connection.</p>
-          
-          <form onSubmit={handleConfigSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Project URL</label>
-              <input name="url" required className="w-full bg-black/50 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all placeholder-zinc-700" placeholder="https://xyz.supabase.co" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Anon Key</label>
-              <input name="key" type="password" required className="w-full bg-black/50 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all placeholder-zinc-700" placeholder="eyJhbGciOiJIUzI1NiIs..." />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Admin Override (God Mode)</label>
-              <input name="adminEmail" required placeholder="architect@domain.com" className="w-full bg-black/50 border border-white/10 rounded-lg p-2.5 text-sm text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 outline-none transition-all placeholder-zinc-700" />
-            </div>
-            <button type="submit" className="w-full mt-4 bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-500 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.5)] flex justify-center items-center gap-2">
-              Connect to Vault
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
   // ==========================================
   // UI RENDER: COMMAND CENTER (GOD MODE)
   // ==========================================
@@ -322,9 +220,6 @@ function App() {
               <p className="text-sm text-zinc-400">Global System Overview & Manual Overrides</p>
             </div>
             <div className="flex gap-4 items-center">
-              {!getEnv('VITE_SUPABASE_URL') && (
-                <button onClick={() => { sessionStorage.clear(); setIsConfigured(false); }} className="text-xs text-zinc-500 hover:text-white transition-colors">Configure Vault</button>
-              )}
               <button onClick={handleLogout} className="text-sm font-medium text-zinc-400 hover:text-rose-400 transition-colors bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg border border-white/5">
                 Sever Connection
               </button>
@@ -419,9 +314,6 @@ function App() {
             <p className="mt-2 text-sm text-zinc-400 ml-11">Zero Trust Compliance Engine</p>
           </div>
           <div className="flex gap-4 items-center">
-            {!vendorId && !getEnv('VITE_SUPABASE_URL') && (
-              <button onClick={() => { sessionStorage.clear(); setIsConfigured(false); }} className="text-xs text-zinc-500 hover:text-white transition-colors">Configure Vault</button>
-            )}
             {vendorId && (
               <button onClick={handleLogout} className="text-sm font-medium text-zinc-400 hover:text-rose-400 transition-colors bg-white/5 hover:bg-white/10 px-4 py-2 rounded-lg border border-white/5">
                 Log Out
